@@ -1,0 +1,27 @@
+# ── Web framework ──────────────────────────────────────────────────────────
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+python-multipart>=0.0.9         # required for UploadFile support
+
+# ── YOLO + CV ──────────────────────────────────────────────────────────────
+ultralytics>=8.2.0
+opencv-python-headless>=4.9.0   # headless: no GUI deps needed in a container
+numpy>=1.26.0
+
+# ── Data validation ────────────────────────────────────────────────────────
+pydantic>=2.7.0
+pydantic-settings>=2.2.0
+
+# ── Rate limiting ──────────────────────────────────────────────────────────
+slowapi>=0.1.9
+
+# ── Async file I/O ─────────────────────────────────────────────────────────
+aiofiles>=23.2.1
+
+# ── Environment variables ──────────────────────────────────────────────────
+python-dotenv>=1.0.0
+
+# ── PyTorch (CPU-only) ─────────────────────────────────────────────────────
+# For GPU support, replace this line with the CUDA-enabled wheel:
+#   torch>=2.3.0+cu121 --index-url https://download.pytorch.org/whl/cu121
+torch>=2.3.0
