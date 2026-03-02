@@ -73,10 +73,11 @@ def start_training(
     # 2. Trigger training in the background
     background_tasks.add_task(
         service.start_training_sync,
-        request.project_name,
-        request.epochs,
-        request.imgsz,
-        request.batch
+        project_name=request.project_name,
+        epochs=request.epochs,
+        imgsz=request.imgsz,
+        batch=request.batch,
+        class_names=request.class_names
     )
 
     best_weights_path = f"models/{request.project_name}/weights/best.pt"

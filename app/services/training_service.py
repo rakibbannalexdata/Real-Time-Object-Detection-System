@@ -151,15 +151,9 @@ class TrainingService:
             )
 
         all_classes = train_classes.union(val_classes)
-        # Verify classes are contiguous from 0 to N-1
-        expected_classes = set(range(len(all_classes)))
-        if all_classes != expected_classes:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Class IDs must be contiguous starting from 0. Found classes: {sorted(all_classes)}"
-            )
-
         valid_detected_classes = sorted(list(all_classes))
+        # Support non-contiguous classes for COCO and other real datasets
+        max_class_id = max(valid_detected_classes) if valid_detected_classes else 0
 
         return DatasetSummaryResponse(
             project=project_name,
@@ -170,15 +164,19 @@ class TrainingService:
             dataset_valid=True
         )
 
-    def _generate_yaml(self, project_name: str, num_classes: int) -> Path:
+    def _generate_yaml(self, project_name: str, max_class_id: int, class_names: dict[int, str] = None) -> Path:
         """
         Generates the dataset.yaml dynamically for YOLO training.
         """
         project_dir = self.datasets_dir / project_name
         yaml_path = project_dir / "dataset.yaml"
 
-        # Format class names dynamically (e.g., 0: class_0, 1: class_1)
-        names_dict = "\n".join([f"  {i}: class_{i}" for i in range(num_classes)])
+        # Format class names dynamically (up to max_class_id)
+        if class_names:
+            # Use provided names, default to class_i if missing in dict
+            names_dict = "\n".join([f"  {i}: {class_names.get(i, f'class_{i}')}" for i in range(max_class_id + 1)])
+        else:
+            names_dict = "\n".join([f"  {i}: class_{i}" for i in range(max_class_id + 1)])
 
         # Path must be absolute for YOLO to resolve correctly, or relative to the execution dict.
         # Ultralytics recommends writing absolute paths to avoid confusion.
@@ -194,7 +192,7 @@ names:
         logger.info(f"Generated dataset.yaml at {yaml_path}")
         return yaml_path
 
-    def start_training_sync(self, project_name: str, epochs: int, imgsz: int, batch: int) -> str:
+    def start_training_sync(self, project_name: str, epochs: int, imgsz: int, batch: int, class_names: dict[int, str] = None) -> str:
         """
         Synchronously starts YOLO training.
         Intended to be run in a background thread via FastAPI BackgroundTasks.
@@ -208,11 +206,12 @@ names:
             logger.info(f"Project: {summary.project}")
             logger.info(f"Train images: {summary.train_images}")
             logger.info(f"Val images: {summary.val_images}")
-            logger.info(f"Total classes detected: {summary.total_classes}")
-            logger.info("====================================")
+            # Support non-contiguous classes
+            all_classes = summary.classes_detected
+            max_class_id = max(all_classes) if all_classes else 0
 
             # 2. Generate YAML configuration
-            yaml_path = self._generate_yaml(project_name, summary.total_classes)
+            yaml_path = self._generate_yaml(project_name, max_class_id, class_names)
 
             # 3. Train using YOLO engine
             # yolov8n-seg.pt -> nanoseg model

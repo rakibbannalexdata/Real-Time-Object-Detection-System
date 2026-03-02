@@ -109,6 +109,10 @@ async def detect_image(
         Optional[float],
         Query(ge=0.0, le=1.0, description="Minimum confidence score (overrides default)"),
     ] = None,
+    model_path: Annotated[
+        Optional[str],
+        Query(description="Path to a specific YOLO model (.pt) to use for this request"),
+    ] = None,
     settings: Settings = Depends(get_settings),
     service: DetectionService = Depends(get_detection_service),
 ) -> ImageDetectionResponse:
@@ -145,6 +149,7 @@ async def detect_image(
             confidence_threshold=conf,
             iou_threshold=settings.iou_threshold,
             max_size=settings.max_image_size,
+            model_path=model_path,
         )
     except RuntimeError as exc:
         logger.exception("Model inference failed.")
@@ -189,6 +194,10 @@ async def detect_video(
         Optional[float],
         Query(ge=0.0, le=1.0, description="Minimum confidence score (overrides default)"),
     ] = None,
+    model_path: Annotated[
+        Optional[str],
+        Query(description="Path to a specific YOLO model (.pt) to use for this request"),
+    ] = None,
     settings: Settings = Depends(get_settings),
     service: DetectionService = Depends(get_detection_service),
 ) -> VideoDetectionResponse:
@@ -223,6 +232,7 @@ async def detect_video(
                 frame_skip=settings.video_frame_skip,
                 max_frames=settings.max_video_frames,
                 max_size=settings.max_image_size,
+                model_path=model_path,
             )
         except (ValueError, RuntimeError) as exc:
             logger.exception("Video detection failed.")
@@ -261,6 +271,10 @@ async def detect_video(
 )
 async def detect_base64(
     payload: Base64DetectionRequest,
+    model_path: Annotated[
+        Optional[str],
+        Query(description="Path to a specific YOLO model (.pt) to use for this request"),
+    ] = None,
     settings: Settings = Depends(get_settings),
     service: DetectionService = Depends(get_detection_service),
 ) -> ImageDetectionResponse:
@@ -289,6 +303,7 @@ async def detect_base64(
             confidence_threshold=conf,
             iou_threshold=settings.iou_threshold,
             max_size=settings.max_image_size,
+            model_path=model_path,
         )
     except RuntimeError as exc:
         raise HTTPException(

@@ -5,6 +5,7 @@ class TrainingStartRequest(BaseModel):
     epochs: int = Field(default=100, gt=0, description="Number of training epochs")
     imgsz: int = Field(default=640, gt=0, description="Image size for training")
     batch: int = Field(default=16, gt=0, description="Batch size")
+    class_names: dict[int, str] = Field(default_factory=dict, description="Optional mapping of class IDs to names")
 
 class DatasetSummaryResponse(BaseModel):
     project: str = Field(..., description="Project name")

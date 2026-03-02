@@ -57,6 +57,10 @@ class Detection(BaseModel):
         description="Bounding box [x1, y1, x2, y2] in pixel coordinates",
     )
     class_id: int = Field(..., description="Numeric class identifier")
+    segmentation: Optional[list[list[float]]] = Field(
+        default=None,
+        description="Optional list of normalized polygon coordinates [x1, y1, x2, y2, ...]",
+    )
 
     model_config = {"populate_by_name": True}
 

@@ -50,6 +50,7 @@ class DetectionService:
         confidence_threshold: float,
         iou_threshold: float = 0.45,
         max_size: int = 1280,
+        model_path: Optional[str] = None,
     ) -> tuple[list[Detection], float]:
         """
         Run YOLO detection on a single image.
@@ -85,7 +86,10 @@ class DetectionService:
 
         t_start = time.perf_counter()
 
-        results = self._loader.model.predict(
+        # Get model from path if provided, otherwise default
+        model = self._loader.get_model(model_path) if model_path else self._loader.model
+
+        results = model.predict(
             source=image,
             conf=confidence_threshold,
             iou=iou_threshold,
@@ -116,6 +120,7 @@ class DetectionService:
         frame_skip: int = 1,
         max_frames: int = 500,
         max_size: int = 1280,
+        model_path: Optional[str] = None,
     ) -> VideoDetectionResponse:
         """
         Run YOLO detection frame-by-frame on a video file.
@@ -167,6 +172,9 @@ class DetectionService:
             frame_index = 0
             processed_count = 0
 
+            # Get model from path if provided
+            model = self._loader.get_model(model_path) if model_path else self._loader.model
+
             while True:
                 ret, frame = cap.read()
                 if not ret:
@@ -176,7 +184,7 @@ class DetectionService:
                 if frame_index % frame_skip == 0 and processed_count < max_frames:
                     frame_resized = resize_if_large(frame, max_size)
 
-                    results = self._loader.model.predict(
+                    results = model.predict(
                         source=frame_resized,
                         conf=confidence_threshold,
                         iou=iou_threshold,
@@ -227,8 +235,7 @@ class DetectionService:
     # Result parsing
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _parse_results(results) -> list[Detection]:
+    def _parse_results(self, results) -> list[Detection]:
         """
         Convert raw Ultralytics Results objects into Detection schema instances.
 
@@ -264,6 +271,7 @@ class DetectionService:
                             "confidence": round(conf, 4),
                             "bbox": [round(v, 2) for v in xyxy],
                             "class_id": cls_id,
+                            "segmentation": self._extract_mask(result, i)
                         }
                     )
                 )
@@ -271,3 +279,23 @@ class DetectionService:
         # Sort by confidence descending for consistent output
         detections.sort(key=lambda d: d.confidence, reverse=True)
         return detections
+
+    @staticmethod
+    def _extract_mask(result, index: int) -> Optional[list[list[float]]]:
+        """
+        Extract normalized segmentation mask for a specific detection index.
+        """
+        if not hasattr(result, "masks") or result.masks is None:
+            return None
+        
+        try:
+            # result.masks.xyn returns normalized coordinates [x, y, x, y, ...]
+            # It's a list of numpy arrays (one per detection)
+            masks_xyn = result.masks.xyn
+            if index < len(masks_xyn):
+                mask = masks_xyn[index].tolist()
+                return mask
+        except Exception as exc:
+            logger.warning("Failed to extract mask for detection %d: %e", index, exc)
+            
+        return None

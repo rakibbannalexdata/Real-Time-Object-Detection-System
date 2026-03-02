@@ -28,6 +28,7 @@ class ModelLoader:
 
     _instance: Optional["ModelLoader"] = None
     _lock: threading.Lock = threading.Lock()
+    _model_cache: dict[str, "YOLO"] = {}
 
     def __init__(self, model_path: str) -> None:
         # Prevent direct instantiation — use get_instance()
@@ -90,6 +91,26 @@ class ModelLoader:
     @property
     def is_loaded(self) -> bool:
         return self._model is not None
+
+    def get_model(self, model_path: str):
+        """
+        Get a YOLO model instance from a specific path.
+        Caches the model to avoid repeated loading.
+        """
+        with self._lock:
+            if model_path not in self._model_cache:
+                logger.info("Loading additional YOLO model from path: %s", model_path)
+                try:
+                    from ultralytics import YOLO
+                    # Load and move to the current device
+                    model = YOLO(model_path)
+                    model.to(self._device)
+                    self._model_cache[model_path] = model
+                except Exception as exc:
+                    logger.exception("Failed to load custom YOLO model: %s", exc)
+                    raise RuntimeError(f"Could not load model at {model_path}: {exc}") from exc
+            
+            return self._model_cache[model_path]
 
     # ------------------------------------------------------------------
     # Private helpers
