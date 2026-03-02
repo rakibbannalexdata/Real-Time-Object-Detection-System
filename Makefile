@@ -36,14 +36,25 @@ verify: test-data
 	curl -s -X POST "http://127.0.0.1:8000/api/v1/training/start" \
 	     -H "Content-Type: application/json" \
 	     -d '{"project_name": "valid_project", "epochs": 50, "imgsz": 640, "batch": 16}' | jq .
-	@echo "\n3. Waiting for training to complete (polling for best.pt)..."
-	@timeout=120; \
-	while [ ! -f models/valid_project/weights/best.pt ]; do \
+	@echo "\n3. Waiting for training to complete (polling status)..."
+	@status="training"; \
+	while [ "$$status" = "training" ] || [ "$$status" = "idle" ]; do \
+		response=$$(curl -s "http://127.0.0.1:8000/api/v1/training/status?project=valid_project"); \
+		status=$$(echo $$response | jq -r .status); \
+		progress=$$(echo $$response | jq -r .progress); \
+		epoch=$$(echo $$response | jq -r .current_epoch); \
+		total=$$(echo $$response | jq -r .total_epochs); \
+		message=$$(echo $$response | jq -r .message); \
+		if [ "$$status" = "training" ]; then \
+			echo "Status: $$status | Progress: $$progress% | Epoch: $$epoch/$$total | $$message"; \
+		else \
+			echo "Status: $$status | $$message"; \
+		fi; \
+		if [ "$$status" = "completed" ]; then break; fi; \
+		if [ "$$status" = "failed" ]; then echo "Training FAILED!"; exit 1; fi; \
 		sleep 2; \
-		timeout=$$((timeout-2)); \
-		if [ $$timeout -le 0 ]; then echo "Timeout waiting for model!"; exit 1; fi; \
 	done
-	@echo "Training completed! weights found."
+	@echo "Training completed! weights verified via status."
 	@echo "\n4. Testing inference with trained model..."
 	curl -s -X POST "http://127.0.0.1:8000/api/v1/detect/image?model_path=models/valid_project/weights/best.pt" \
 	     -F "file=@datasets/valid_project/train/images/image_0.jpg;type=image/jpeg" | jq .

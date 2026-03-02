@@ -1,11 +1,13 @@
 import logging
 import os
+import threading
 from pathlib import Path
+from typing import Optional
 
 from fastapi import HTTPException, status
 from ultralytics import YOLO
 
-from app.schemas.training_schema import DatasetSummaryResponse
+from app.schemas.training_schema import DatasetSummaryResponse, TrainingStatusResponse
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +21,8 @@ class TrainingService:
     def __init__(self, datasets_dir: str = "datasets", models_dir: str = "models"):
         self.datasets_dir = Path(datasets_dir)
         self.models_dir = Path(models_dir)
+        self._training_states: dict[str, dict] = {}
+        self._state_lock = threading.Lock()
 
     def _validate_polygon_line(self, line: str, line_no: int, filepath: Path) -> int:
         """
@@ -164,6 +168,35 @@ class TrainingService:
             dataset_valid=True
         )
 
+    def get_training_status(self, project_name: str) -> TrainingStatusResponse:
+        """
+        Retrieves the current training status for a project.
+        """
+        with self._state_lock:
+            state = self._training_states.get(project_name)
+            
+        if not state:
+            return TrainingStatusResponse(
+                project=project_name,
+                status="idle",
+                message="No active training found for this project."
+            )
+            
+        return TrainingStatusResponse(**state)
+
+    def _update_state(self, project_name: str, **kwargs):
+        with self._state_lock:
+            if project_name not in self._training_states:
+                self._training_states[project_name] = {
+                    "project": project_name,
+                    "status": "idle",
+                    "current_epoch": 0,
+                    "total_epochs": 0,
+                    "progress": 0.0,
+                    "message": ""
+                }
+            self._training_states[project_name].update(kwargs)
+
     def _generate_yaml(self, project_name: str, max_class_id: int, class_names: dict[int, str] = None) -> Path:
         """
         Generates the dataset.yaml dynamically for YOLO training.
@@ -216,7 +249,29 @@ names:
             # 3. Train using YOLO engine
             # yolov8n-seg.pt -> nanoseg model
             logger.info(f"Starting YOLO subset-segmentation training for project: {project_name}")
+            self._update_state(
+                project_name, 
+                status="training", 
+                total_epochs=epochs, 
+                current_epoch=0, 
+                progress=0.0,
+                message="Initializing YOLO engine..."
+            )
+            
             model = YOLO("yolov8n-seg.pt")
+
+            # Define callbacks for status tracking
+            def on_train_epoch_end(trainer):
+                current = trainer.epoch + 1
+                progress = round((current / epochs) * 100, 2)
+                self._update_state(
+                    project_name,
+                    current_epoch=current,
+                    progress=progress,
+                    message=f"Training epoch {current}/{epochs}"
+                )
+
+            model.add_callback("on_train_epoch_end", on_train_epoch_end)
 
             # Use absolute path for project to prevent YOLO from prepending 'runs/segment'
             abs_models_dir = self.models_dir.absolute()
@@ -235,8 +290,20 @@ names:
             # or as the user expects it (usually relative to PROJECT_ROOT)
             best_weights = self.models_dir / project_name / "weights" / "best.pt"
             logger.info(f"Training completed successfully! Best weights saved to: {best_weights}")
+            
+            self._update_state(
+                project_name,
+                status="completed",
+                progress=100.0,
+                message="Training finished successfully."
+            )
             return str(best_weights)
 
         except Exception as e:
             logger.exception("Training failed due to unexpected error.")
+            self._update_state(
+                project_name,
+                status="failed",
+                message=f"Error: {str(e)}"
+            )
             raise e

@@ -1,14 +1,21 @@
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from pydantic import ValidationError
 
-from app.schemas.training_schema import DatasetSummaryResponse, TrainingStartRequest, TrainingStartResponse
+from app.schemas.training_schema import (
+    DatasetSummaryResponse,
+    TrainingStartRequest,
+    TrainingStartResponse,
+    TrainingStatusResponse,
+)
 from app.services.training_service import TrainingService
 from app.schemas.detection_schema import ErrorResponse
 
 router = APIRouter(prefix="/training", tags=["Training"])
 
+_training_service_instance = TrainingService()
+
 def get_training_service() -> TrainingService:
-    return TrainingService()
+    return _training_service_instance
 
 @router.get(
     "/dataset/info",
@@ -88,3 +95,19 @@ def start_training(
         message="Dataset validated successfully. Training started in the background.",
         best_weights_path=best_weights_path
     )
+
+
+@router.get(
+    "/status",
+    response_model=TrainingStatusResponse,
+    summary="Get training status",
+    description="Polls the current status, epoch, and progress of a training project."
+)
+def get_training_status(
+    project: str = Query(..., description="Project name"),
+    service: TrainingService = Depends(get_training_service)
+) -> TrainingStatusResponse:
+    """
+    Returns the current status of the training process for the specified project.
+    """
+    return service.get_training_status(project)

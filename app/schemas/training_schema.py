@@ -20,3 +20,11 @@ class TrainingStartResponse(BaseModel):
     project: str
     message: str
     best_weights_path: str
+
+class TrainingStatusResponse(BaseModel):
+    project: str
+    status: str = Field(..., description="idle, training, completed, failed")
+    current_epoch: int = 0
+    total_epochs: int = 0
+    progress: float = 0.0
+    message: str = ""
