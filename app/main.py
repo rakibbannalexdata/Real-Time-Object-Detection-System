@@ -28,6 +28,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
 from app.api.routes.detection import router as detection_router
+from app.api.routes.training import router as training_router
 from app.core.config import get_settings
 from app.core.model_loader import ModelLoader
 from app.schemas.detection_schema import ErrorResponse, HealthResponse
@@ -160,6 +161,10 @@ def create_app() -> FastAPI:
     # ---- Routers ----
     app.include_router(
         detection_router,
+        prefix=settings.api_prefix,
+    )
+    app.include_router(
+        training_router,
         prefix=settings.api_prefix,
     )
 
