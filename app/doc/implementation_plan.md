@@ -1,156 +1,67 @@
-# Real-Time Object Detection System — Implementation Plan
+# Segmentation Training Implementation Plan
 
-Build a production-ready REST API that runs YOLOv8 object detection on uploaded images and videos. The system follows clean architecture with singleton model loading, dependency injection, structured JSON responses, and Docker support.
+This plan details the addition of a new segmentation model training feature to our YOLOv8 FastAPI backend.
 
 ## Proposed Changes
 
-### Core Infrastructure
+### Core Integration
+- Add a new `app/schemas/training_schema.py` for training-related request and response models.
+- Add a new `app/services/training_service.py` to handle the heavy lifting (validation, yaml generation, model training).
+- Add a new `app/api/routes/training.py` with the new endpoints.
+- Update [app/main.py](file:///home/rakib-ul-banna/projects/test-detection-system/app/main.py) to include the new `training.py` router.
 
-#### [NEW] [config.py](file:///home/rakib-ul-banna/projects/test-detection-system/app/core/config.py)
-- Pydantic `BaseSettings` for all env-configurable values: `MODEL_PATH`, `CONFIDENCE_THRESHOLD`, `MAX_IMAGE_SIZE`, `API_RATE_LIMIT`, `LOG_LEVEL`
-- Reads from `.env` file automatically
+### [NEW] app/schemas/training_schema.py
+- `TrainingStartRequest`
+  - `project_name` (str)
+  - `epochs` (int, default=100)
+  - `imgsz` (int, default=640)
+  - `batch` (int, default=16)
+- `DatasetSummaryResponse`
+  - `project` (str)
+  - `train_images` (int)
+  - `val_images` (int)
+  - `total_classes` (int)
+  - `classes_detected` (list[int])
+  - `dataset_valid` (bool)
 
-#### [NEW] [model_loader.py](file:///home/rakib-ul-banna/projects/test-detection-system/app/core/model_loader.py)
-- `ModelLoader` singleton class
-- Loads `yolov8n.pt` once at startup
-- Detects CUDA availability and uses GPU if present
-- Raises descriptive `RuntimeError` if model file is missing
+### [NEW] app/services/training_service.py
+- `TrainingService` class
+  - **Dataset Validation (`_validate_dataset`)**:
+    - Ensures the directory structure `datasets/{project_name}/(train|val)/(images|labels)` exists.
+    - Loops through every `.jpg`, `.jpeg`, `.png` in `images`.
+    - Checks that a [.txt](file:///home/rakib-ul-banna/projects/test-detection-system/requirements.txt) file with the exact same base name exists in `labels`.
+    - Reads the [.txt](file:///home/rakib-ul-banna/projects/test-detection-system/requirements.txt) file and ensures:
+      - It is not empty.
+      - Each line consists of an integer `class_id` followed by an even number of coordinates (all between `0` and `1`).
+    - Collects unique `class_id`s to automatically compute the number of classes.
+    - Will raise specific exceptions (e.g. `MissingLabelError`, `EmptyLabelError`, `InvalidPolygonError`) that bubble up.
+  - **YAML Generation (`_generate_yaml`)**:
+    - Takes the unique class IDs found during validation.
+    - Creates `datasets/{project_name}/dataset.yaml` specifying `train: train/images`, `val: val/images`, and the dynamically generated `names` mapping.
+  - **Dataset Summary (`get_dataset_info`)**:
+    - Returns the `DatasetSummaryResponse`. Triggers the validation step automatically and aggregates the counts of train/val images and class stats.
+  - **Model Training (`start_training`)**:
+    - Calls `_validate_dataset`.
+    - Calls `_generate_yaml`.
+    - Triggers `YOLO("yolov8n-seg.pt").train(...)` correctly in a non-blocking thread or explicitly on the event loop so the endpoint can return quickly (or run it synchronously if required, but standard practice in FastAPI is to return a task ID. For simplicity if the prompt implies blocking, we will block, or run in a `ThreadPoolExecutor`).
 
----
+### [NEW] app/api/routes/training.py
+- **POST `/training/start`**
+  - Accepts `TrainingStartRequest`.
+  - Runs validation; if validation fails, catches custom errors and returns HTTP 400 with structured JSON format detailing the error reason (missing label, corrupt image, etc.)
+  - If validation passes, starts training and returns where the best weights will be stored (`models/{project_name}/weights/best.pt`).
+- **GET `/training/dataset/info`**
+  - Accepts `project` query param.
+  - Returns the `DatasetSummaryResponse` or throws 404 if the project dataset doesn't exist.
 
-### Schemas
-
-#### [NEW] [detection_schema.py](file:///home/rakib-ul-banna/projects/test-detection-system/app/schemas/detection_schema.py)
-- `BoundingBox` — `[x1, y1, x2, y2]` as list of floats
-- `Detection` — `class_name`, `confidence`, `bbox`
-- `ImageDetectionResponse` — `detections: list[Detection]`, `image_width`, `image_height`, `inference_time_ms`
-- `VideoDetectionResponse` — `total_frames`, `processed_frames`, `frame_detections`, `processing_time_ms`
-- `HealthResponse` — model status, CUDA info, version
-- `ErrorResponse` — error detail
-
----
-
-### Services
-
-#### [NEW] [detection_service.py](file:///home/rakib-ul-banna/projects/test-detection-system/app/services/detection_service.py)
-- `DetectionService` class injected with `ModelLoader`
-- `detect_image(image: np.ndarray, confidence_threshold: float) → list[Detection]`
-- `detect_video(video_path: str, confidence_threshold: float) → VideoDetectionResponse`
-  - Frame-by-frame processing with `cv2.VideoCapture`
-  - Properly releases resources via `finally`
-  - Skips frames optionally to save memory
-
----
-
-### Utils
-
-#### [NEW] [image_utils.py](file:///home/rakib-ul-banna/projects/test-detection-system/app/utils/image_utils.py)
-- `decode_image(data: bytes) → np.ndarray` — decode uploaded bytes to OpenCV array, raise on corruption
-- `resize_if_large(img, max_size) → np.ndarray` — resize if largest dimension > max_size
-- `base64_to_image(b64_str: str) → np.ndarray` — decode base64 string to image
-
----
-
-### API Routes
-
-#### [NEW] [detection.py](file:///home/rakib-ul-banna/projects/test-detection-system/app/api/routes/detection.py)
-- `POST /detect/image` — accepts `UploadFile`, validates MIME type, runs image detection, returns `ImageDetectionResponse`
-- `POST /detect/video` — accepts `UploadFile`, saves to temp file, runs video detection, cleans up temp file
-- `POST /detect/base64` — accepts JSON body with `base64_image`, runs detection (bonus)
-- Query param `confidence_threshold` on all detection endpoints (default from config)
-
----
-
-### Main App
-
-#### [NEW] [main.py](file:///home/rakib-ul-banna/projects/test-detection-system/app/main.py)
-- FastAPI app with `lifespan` context manager for startup/shutdown
-- Mounts routes under `/api/v1`
-- `GET /health` endpoint
-- `GET /` root welcome endpoint
-- CORS middleware
-- Structured JSON logging via `logging`
-- Basic rate limiting using `slowapi`
-- Custom exception handlers for `HTTPException` and unhandled errors
-
----
-
-### Package Init
-
-#### [NEW] [__init__.py](file:///home/rakib-ul-banna/projects/test-detection-system/app/__init__.py)
-- Empty package marker
-
----
-
-### Docker & Requirements
-
-#### [NEW] [requirements.txt](file:///home/rakib-ul-banna/projects/test-detection-system/requirements.txt)
-```
-fastapi>=0.111.0
-uvicorn[standard]>=0.29.0
-ultralytics>=8.2.0
-opencv-python-headless>=4.9.0
-numpy>=1.26.0
-python-multipart>=0.0.9
-pydantic>=2.7.0
-pydantic-settings>=2.2.0
-slowapi>=0.1.9
-python-dotenv>=1.0.0
-aiofiles>=23.2.1
-```
-
-#### [NEW] [Dockerfile](file:///home/rakib-ul-banna/projects/test-detection-system/Dockerfile)
-- Base: `python:3.11-slim`
-- System deps: `libgl1`, `libglib2.0-0` (OpenCV headless requirements)
-- `COPY requirements.txt` → `pip install --no-cache-dir`
-- Non-root user for security
-- `EXPOSE 8000`
-- `CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]`
-
-#### [NEW] [.dockerignore](file:///home/rakib-ul-banna/projects/test-detection-system/.dockerignore)
-- Excludes `__pycache__`, `*.pt` model files (downloaded at runtime), `.env`, `venv`
-
-#### [NEW] [README.md](file:///home/rakib-ul-banna/projects/test-detection-system/README.md)
-- Local setup, curl examples, Docker instructions, example responses
-
----
+### [MODIFY] app/main.py
+- Include the new `/training` router in the FastAPI app.
 
 ## Verification Plan
 
-### Automated (curl-based API tests)
-
-After running locally (`uvicorn app.main:app --reload`):
-
-```bash
-# 1. Health check
-curl http://localhost:8000/health
-
-# 2. Image detection
-curl -X POST http://localhost:8000/api/v1/detect/image \
-  -F "file=@/path/to/image.jpg"
-
-# 3. Image detection with custom threshold
-curl -X POST "http://localhost:8000/api/v1/detect/image?confidence_threshold=0.5" \
-  -F "file=@/path/to/image.jpg"
-
-# 4. Video detection
-curl -X POST http://localhost:8000/api/v1/detect/video \
-  -F "file=@/path/to/video.mp4"
-
-# 5. Base64 image detection
-curl -X POST http://localhost:8000/api/v1/detect/base64 \
-  -H "Content-Type: application/json" \
-  -d '{"base64_image": "<base64_string>"}'
-```
-
-### Docker Verification
-
-```bash
-docker build -t object-detection .
-docker run -p 8000:8000 object-detection
-# Then run same curl commands against localhost:8000
-```
-
-### Error Handling Checks
-- Upload a `.txt` file → expect 400 "Unsupported file type"
-- Upload a corrupted image bytes → expect 422 "Failed to decode image"
+### Automated tests via CURL
+- Missing labels: Create a dataset with an image but no [.txt](file:///home/rakib-ul-banna/projects/test-detection-system/requirements.txt) file -> Expect HTTP 400
+- Invalid polygon: Add a [.txt](file:///home/rakib-ul-banna/projects/test-detection-system/requirements.txt) with odd number of coordinates -> Expect HTTP 400
+- Out of bounds coordinate: Add a [.txt](file:///home/rakib-ul-banna/projects/test-detection-system/requirements.txt) with coordinate > 1 -> Expect HTTP 400
+- Dataset info endpoint: Call `/dataset/info?project=valid_project` -> Expect correct count of images and classes.
+- Valid training trigger: Should generate YAML and kick off the YOLO engine.

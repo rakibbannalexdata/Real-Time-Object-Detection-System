@@ -1,16 +1,18 @@
-# Real-Time Object Detection System
+# Real-Time Object Detection & Segmentation System
 
-A **production-ready** REST API for real-time object detection powered by **YOLOv8** and **FastAPI**.
+A **production-ready** REST API for real-time object detection and segmentation model training powered by **YOLOv8** and **FastAPI**.
 
 ## ✨ Features
 
 - 📸 **Image detection** — upload JPEG/PNG/BMP/WEBP and get structured JSON back
 - 🎬 **Video detection** — frame-by-frame analysis with automatic resource cleanup
 - 🔡 **Base64 support** — send encoded images via JSON for UI/mobile clients
+- 🧠 **Segmentation Training** — trigger YOLOv8 segmentation training via API with strict dataset validation
 - ⚡ **Singleton model** — YOLO loads once at startup, shared across all requests
 - 🚀 **GPU auto-detection** — uses CUDA → MPS → CPU automatically
 - 🛡️ **Rate limiting** — 60 requests/minute per IP via `slowapi`
-- 🐳 **Docker-ready** — multi-stage, non-root, health-checked image
+- �️ **Automation** — full project lifecycle managed via `Makefile`
+- �🐳 **Docker-ready** — multi-stage, non-root, health-checked image
 
 ---
 
@@ -18,226 +20,108 @@ A **production-ready** REST API for real-time object detection powered by **YOLO
 
 ```
 app/
-├── main.py                  # FastAPI app, lifespan, middleware, exception handlers
+├── main.py                  # FastAPI app, lifespan, middleware, routers
 ├── core/
 │   ├── config.py            # Pydantic BaseSettings (env-configurable)
 │   └── model_loader.py      # Thread-safe YOLO singleton
 ├── api/
 │   └── routes/
-│       └── detection.py     # POST /detect/image, /video, /base64
+│       ├── detection.py     # POST /detect/image, /video, /base64
+│       └── training.py      # GET /training/dataset/info, POST /training/start
 ├── schemas/
-│   └── detection_schema.py  # Pydantic response models
+│   ├── detection_schema.py  # Pydantic response models
+│   └── training_schema.py   # Training request/response models
 ├── services/
-│   └── detection_service.py # Business logic (image + video inference)
+│   ├── detection_service.py # Detection logic
+│   └── training_service.py  # Dataset validation & training logic
 └── utils/
     └── image_utils.py       # Decode, resize, base64 helpers
+Makefile                     # Automation commands
 requirements.txt
 Dockerfile
-.dockerignore
 ```
 
 ---
 
 ## 🚀 Local Setup
 
-### 1. Clone & set up a virtual environment
+The easiest way to set up the project is using the provided `Makefile`.
+
+### 1. Installation
 
 ```bash
-git clone <repo-url>
-cd test-detection-system
-python3 -m venv venv
-source venv/bin/activate
+make install
 ```
+This creates a virtual environment and installs all dependencies.
 
-### 2. Install dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
-### 3. Configure (optional)
+### 2. Configure (optional)
 
 Copy the sample env file and edit as needed:
-
 ```bash
 cp .env.example .env
 ```
 
-| Variable | Default | Description |
-|---|---|---|
-| `MODEL_PATH` | `yolov8n.pt` | YOLO model name / path |
-| `CONFIDENCE_THRESHOLD` | `0.25` | Default detection threshold |
-| `LOG_LEVEL` | `INFO` | `DEBUG/INFO/WARNING/ERROR` |
-| `MAX_IMAGE_SIZE` | `1280` | Max image dimension (px) |
-| `VIDEO_FRAME_SKIP` | `1` | Process every N-th frame |
-| `MAX_VIDEO_FRAMES` | `500` | Hard cap on frames per video |
-| `RATE_LIMIT_REQUESTS` | `60` | Requests per minute per IP |
-
-### 4. Run the server
+### 3. Run the server
 
 ```bash
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+make run
 ```
-
 API docs available at → **http://localhost:8000/docs**
 
 ---
 
-## 🧪 Testing with curl
+## 🛠️ Automation (Makefile)
 
-### Health check
+| Command | Description |
+|---|---|
+| `make install` | Setup venv and install dependencies |
+| `make run` | Start the FastAPI development server |
+| `make test-data` | Generate dummy test datasets for training verification |
+| `make verify` | Run automated curl tests against training endpoints |
+| `make clean` | Remove venv, __pycache__, and temporary training runs |
+
+---
+
+## � Segmentation Training
+
+### 1. Dataset Info (Validation)
+Check if your dataset is correctly formatted for YOLO segmentation.
 
 ```bash
-curl http://localhost:8000/health
+curl -s "http://localhost:8000/api/v1/training/dataset/info?project=my_project" | jq .
 ```
 
-**Response:**
-```json
-{
-  "status": "healthy",
-  "model_loaded": true,
-  "model_path": "yolov8n.pt",
-  "model_device": "cuda",
-  "cuda_available": true,
-  "app_version": "1.0.0"
-}
+### 2. Start Training
+Trigger a background training task.
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/training/start" \
+     -H "Content-Type: application/json" \
+     -d '{"project_name": "my_project", "epochs": 10, "imgsz": 640, "batch": 16}'
 ```
 
 ---
+
+## 🧪 Detection API
 
 ### Image detection
-
 ```bash
-curl -X POST http://localhost:8000/api/v1/detect/image \
-  -F "file=@/path/to/image.jpg"
+curl -X POST http://localhost:8000/api/v1/detect/image -F "file=@/path/to/image.jpg"
 ```
-
-With custom confidence threshold:
-```bash
-curl -X POST "http://localhost:8000/api/v1/detect/image?confidence_threshold=0.5" \
-  -F "file=@/path/to/image.jpg"
-```
-
-**Response:**
-```json
-{
-  "status": "success",
-  "detections": [
-    {
-      "class": "person",
-      "confidence": 0.9241,
-      "bbox": [125.4, 80.2, 380.1, 620.5],
-      "class_id": 0
-    },
-    {
-      "class": "car",
-      "confidence": 0.8712,
-      "bbox": [400.0, 200.0, 750.3, 480.9],
-      "class_id": 2
-    }
-  ],
-  "total_detections": 2,
-  "image_width": 1280,
-  "image_height": 720,
-  "confidence_threshold": 0.25,
-  "inference_time_ms": 34.21,
-  "model_device": "cuda"
-}
-```
-
----
 
 ### Video detection
-
 ```bash
-curl -X POST http://localhost:8000/api/v1/detect/video \
-  -F "file=@/path/to/video.mp4"
-```
-
-**Response:**
-```json
-{
-  "status": "success",
-  "total_frames": 300,
-  "processed_frames": 300,
-  "frame_detections": [
-    {
-      "frame_index": 0,
-      "timestamp_ms": 0.0,
-      "detections": [{"class": "car", "confidence": 0.88, "bbox": [...], "class_id": 2}],
-      "total_detections": 1
-    }
-  ],
-  "confidence_threshold": 0.25,
-  "processing_time_ms": 1420.5,
-  "video_fps": 30.0,
-  "video_width": 1920,
-  "video_height": 1080
-}
-```
-
----
-
-### Base64 image detection
-
-```bash
-BASE64=$(base64 -w 0 /path/to/image.jpg)
-
-curl -X POST http://localhost:8000/api/v1/detect/base64 \
-  -H "Content-Type: application/json" \
-  -d "{\"base64_image\": \"$BASE64\", \"confidence_threshold\": 0.3}"
+curl -X POST http://localhost:8000/api/v1/detect/video -F "file=@/path/to/video.mp4"
 ```
 
 ---
 
 ## 🐳 Docker
 
-### Build
-
+### Build & Run
 ```bash
 docker build -t object-detection:latest .
-```
-
-### Run
-
-```bash
-docker run -d \
-  -p 8000:8000 \
-  --name object-detection \
-  -e CONFIDENCE_THRESHOLD=0.3 \
-  -e LOG_LEVEL=INFO \
-  object-detection:latest
-```
-
-### With GPU support
-
-```bash
-docker run -d \
-  -p 8000:8000 \
-  --gpus all \
-  --name object-detection-gpu \
-  object-detection:latest
-```
-
-### Docker Compose (quick start)
-
-```yaml
-# docker-compose.yml
-version: "3.9"
-services:
-  api:
-    build: .
-    ports:
-      - "8000:8000"
-    environment:
-      - MODEL_PATH=yolov8n.pt
-      - CONFIDENCE_THRESHOLD=0.25
-      - LOG_LEVEL=INFO
-    restart: unless-stopped
-```
-
-```bash
-docker compose up -d
+docker run -d -p 8000:8000 --name object-detection object-detection:latest
 ```
 
 ---
@@ -246,35 +130,11 @@ docker compose up -d
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/` | API root |
 | `GET` | `/health` | Health + model status |
-| `GET` | `/docs` | Swagger UI |
-| `GET` | `/redoc` | ReDoc UI |
 | `POST` | `/api/v1/detect/image` | Detect objects in image |
 | `POST` | `/api/v1/detect/video` | Detect objects in video |
-| `POST` | `/api/v1/detect/base64` | Detect from base64 image |
-
----
-
-## ⚡ Performance Notes
-
-- The YOLO model loads **once** at startup via a thread-safe singleton
-- Large images are **automatically resized** (configurable via `MAX_IMAGE_SIZE`)
-- Video frames are skippable via `VIDEO_FRAME_SKIP` (e.g., `2` = process every other frame)
-- GPU is auto-selected when CUDA is available — no code changes required
-- Responses include `inference_time_ms` for latency monitoring
-
----
-
-## 🛠️ Development
-
-```bash
-# Run with auto-reload
-uvicorn app.main:app --reload --log-level debug
-
-# Run with multiple workers (production, no reload)
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
-```
+| `GET` | `/api/v1/training/dataset/info` | Validate segmentation dataset |
+| `POST` | `/api/v1/training/start` | Start segmentation training |
 
 ---
 

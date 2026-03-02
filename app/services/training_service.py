@@ -219,16 +219,21 @@ names:
             logger.info(f"Starting YOLO subset-segmentation training for project: {project_name}")
             model = YOLO("yolov8n-seg.pt")
 
+            # Use absolute path for project to prevent YOLO from prepending 'runs/segment'
+            abs_models_dir = self.models_dir.absolute()
+
             model.train(
                 data=str(yaml_path),
                 epochs=epochs,
                 imgsz=imgsz,
                 batch=batch,
-                project=str(self.models_dir),
+                project=str(abs_models_dir),
                 name=project_name,
                 exist_ok=True # Enable resuming/overwriting
             )
 
+            # Construct the returned path relative to the current working directory
+            # or as the user expects it (usually relative to PROJECT_ROOT)
             best_weights = self.models_dir / project_name / "weights" / "best.pt"
             logger.info(f"Training completed successfully! Best weights saved to: {best_weights}")
             return str(best_weights)

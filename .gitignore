@@ -1,0 +1,35 @@
+# Virtual Environment
+venv/
+.venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Environment / Secret
+.env
+.env.*
+!.env.example
+
+# YOLO / Training Artifacts
+datasets/
+models/
+runs/
+*.pt
+*.onnx
+*.engine
+yolov8*-seg.pt
+
+# Logs
+*.log
+uvicorn.log
+
+# OS
+.DS_Store
+Thumbs.db
+
