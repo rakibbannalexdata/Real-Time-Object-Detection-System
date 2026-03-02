@@ -35,7 +35,7 @@ verify: test-data
 	@echo "\n2. Starting training..."
 	curl -s -X POST "http://127.0.0.1:8000/api/v1/training/start" \
 	     -H "Content-Type: application/json" \
-	     -d '{"project_name": "valid_project", "epochs": 50, "imgsz": 640, "batch": 16}' | jq .
+	     -d "{\"project_name\": \"valid_project\", \"epochs\": 50, \"imgsz\": 640, \"batch\": 16, \"class_names\": $$(cat coco_classes.json)}" | jq .
 	@echo "\n3. Waiting for training to complete (polling status)..."
 	@status="training"; \
 	while [ "$$status" = "training" ] || [ "$$status" = "idle" ]; do \
@@ -56,7 +56,7 @@ verify: test-data
 	done
 	@echo "Training completed! weights verified via status."
 	@echo "\n4. Testing inference with trained model..."
-	curl -s -X POST "http://127.0.0.1:8000/api/v1/detect/image?model_path=models/valid_project/weights/best.pt" \
+	curl -s -X POST "http://127.0.0.1:8000/api/v1/detect/image?model_path=models/valid_project/weights/best.pt&confidence_threshold=0.005" \
 	     -F "file=@datasets/valid_project/train/images/image_0.jpg;type=image/jpeg" | jq .
 
 clean:
