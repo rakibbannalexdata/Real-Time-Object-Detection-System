@@ -1,6 +1,7 @@
 import logging
 import os
 import threading
+import yaml
 from pathlib import Path
 from typing import Optional
 
@@ -200,19 +201,34 @@ class TrainingService:
     def _generate_yaml(self, project_name: str, max_class_id: int, class_names: dict[int, str] = None) -> Path:
         """
         Generates the dataset.yaml dynamically for YOLO training.
+        Attempts to preserve existing class names if none are provided.
         """
         project_dir = self.datasets_dir / project_name
         yaml_path = project_dir / "dataset.yaml"
 
-        # Format class names dynamically (up to max_class_id)
-        if class_names:
-            # Use provided names, default to class_i if missing in dict
-            names_dict = "\n".join([f"  {i}: {class_names.get(i, f'class_{i}')}" for i in range(max_class_id + 1)])
-        else:
-            names_dict = "\n".join([f"  {i}: class_{i}" for i in range(max_class_id + 1)])
+        # 1. Start with provided or empty dict
+        final_class_names = class_names or {}
 
-        # Path must be absolute for YOLO to resolve correctly, or relative to the execution dict.
-        # Ultralytics recommends writing absolute paths to avoid confusion.
+        # 2. If no names provided, try to load from existing YAML
+        if not final_class_names and yaml_path.exists():
+            try:
+                with open(yaml_path, 'r') as f:
+                    data = yaml.safe_load(f)
+                    if data and 'names' in data:
+                        # Convert keys to int if they are strings (YAML loader might return strings or ints)
+                        raw_names = data['names']
+                        if isinstance(raw_names, dict):
+                            final_class_names = {int(k): v for k, v in raw_names.items()}
+                        elif isinstance(raw_names, list):
+                            final_class_names = {i: v for i, v in enumerate(raw_names)}
+            except Exception as e:
+                logger.warning(f"Could not parse existing dataset.yaml for names: {e}")
+
+        # 3. Format class names dynamically (up to max_class_id)
+        # Use provided/existing names, default to class_i if still missing
+        names_dict = "\n".join([f"  {i}: {final_class_names.get(i, f'class_{i}')}" for i in range(max_class_id + 1)])
+
+        # Path must be absolute for YOLO to resolve correctly
         abs_project_dir = project_dir.absolute()
 
         yaml_content = f"""path: {abs_project_dir}
