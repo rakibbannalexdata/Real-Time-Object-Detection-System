@@ -31,15 +31,15 @@ test-data: install
 verify: test-data
 	@echo "Ensure the server is running on http://localhost:8000 before running this."
 	@echo "1. Testing dataset info..."
-	curl -s "http://127.0.0.1:8000/api/v1/training/dataset/info?project=valid_project" | jq .
+	curl -s "http://127.0.0.1:8000/api/v1/training/dataset/info?project=coco128-seg" | jq .
 	@echo "\n2. Starting training..."
 	curl -s -X POST "http://127.0.0.1:8000/api/v1/training/start" \
 	     -H "Content-Type: application/json" \
-	     -d "{\"project_name\": \"valid_project\", \"epochs\": 50, \"imgsz\": 640, \"batch\": 16, \"class_names\": $$(cat coco_classes.json)}" | jq .
+	     -d "{\"project_name\": \"coco128-seg\", \"epochs\": 5, \"imgsz\": 640, \"batch\": 16}" | jq .
 	@echo "\n3. Waiting for training to complete (polling status)..."
 	@status="training"; \
 	while [ "$$status" = "training" ] || [ "$$status" = "idle" ]; do \
-		response=$$(curl -s "http://127.0.0.1:8000/api/v1/training/status?project=valid_project"); \
+		response=$$(curl -s "http://127.0.0.1:8000/api/v1/training/status?project=coco128-seg"); \
 		status=$$(echo $$response | jq -r .status); \
 		progress=$$(echo $$response | jq -r .progress); \
 		epoch=$$(echo $$response | jq -r .current_epoch); \
@@ -52,12 +52,12 @@ verify: test-data
 		fi; \
 		if [ "$$status" = "completed" ]; then break; fi; \
 		if [ "$$status" = "failed" ]; then echo "Training FAILED!"; exit 1; fi; \
-		sleep 2; \
+		sleep 10; \
 	done
 	@echo "Training completed! weights verified via status."
 	@echo "\n4. Testing inference with trained model..."
-	curl -s -X POST "http://127.0.0.1:8000/api/v1/detect/image?model_path=models/valid_project/weights/best.pt&confidence_threshold=0.005" \
-	     -F "file=@datasets/valid_project/train/images/image_0.jpg;type=image/jpeg" | jq .
+	curl -s -X POST "http://127.0.0.1:8000/api/v1/detect/image?model_path=models/coco128-seg/weights/best.pt&confidence_threshold=0.25" \
+	     -F "file=@datasets/coco128-seg/val/images/000000000139.jpg" | jq .
 
 clean:
 	rm -rf $(VENV)
