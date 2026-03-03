@@ -59,6 +59,9 @@ verify: test-data
 	curl -s -X POST "http://127.0.0.1:8000/api/v1/detect/image?model_path=models/coco128-seg/weights/best.pt&confidence_threshold=0.25" \
 	     -F "file=@datasets/coco128-seg/val/images/000000000139.jpg" | jq .
 
+ui: install
+	$(BIN)/streamlit run streamlit_app.py
+
 clean:
 	rm -rf $(VENV)
 	rm -rf datasets/
