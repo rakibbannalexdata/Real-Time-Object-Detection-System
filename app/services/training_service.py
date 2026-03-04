@@ -175,8 +175,18 @@ class TrainingService:
         """
         with self._state_lock:
             state = self._training_states.get(project_name)
-            
+
         if not state:
+            # Check if training has already been completed in a previous backend run
+            best_weights_path = self.models_dir / project_name / "weights" / "best.pt"
+            if best_weights_path.exists():
+                return TrainingStatusResponse(
+                    project=project_name,
+                    status="completed",
+                    progress=100.0,
+                    message="Training finished successfully in a previous session."
+                )
+            
             return TrainingStatusResponse(
                 project=project_name,
                 status="idle",
