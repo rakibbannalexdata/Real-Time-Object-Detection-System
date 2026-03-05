@@ -18,7 +18,7 @@ __pycache__/
 
 # YOLO / Training Artifacts
 datasets/
-main_dataset/
+main_data_sets/
 models/
 runs/
 *.pt
