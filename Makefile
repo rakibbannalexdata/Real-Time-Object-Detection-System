@@ -5,6 +5,7 @@ VENV = venv
 BIN = $(VENV)/bin
 PIP = $(BIN)/pip
 UVICORN = $(BIN)/uvicorn
+PROJECT = weedsVsCrops
 
 help:
 	@echo "Usage:"
@@ -23,23 +24,26 @@ $(VENV)/bin/activate: requirements.txt
 	touch $(VENV)/bin/activate
 
 run: install
-	$(UVICORN) app.main:app --host 0.0.0.0 --port 8000 --reload
+	. $(VENV)/bin/activate && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-exclude "datasets/*" --reload-exclude "models/*" --reload-exclude "runs/*" --reload-exclude "*.yaml"
 
 test-data: install
 	$(BIN)/python setup_test_data.py
 
+convert-coco-txt: install
+	$(BIN)/python convert_coco_txt.py
+
 verify: test-data
 	@echo "Ensure the server is running on http://localhost:8000 before running this."
 	@echo "1. Testing dataset info..."
-	curl -s "http://127.0.0.1:8000/api/v1/training/dataset/info?project=coco128-seg" | jq .
+	curl -s "http://127.0.0.1:8000/api/v1/training/dataset/info?project=$(PROJECT)" | jq .
 	@echo "\n2. Starting training..."
 	curl -s -X POST "http://127.0.0.1:8000/api/v1/training/start" \
 	     -H "Content-Type: application/json" \
-	     -d "{\"project_name\": \"coco128-seg\", \"epochs\": 5, \"imgsz\": 640, \"batch\": 16}" | jq .
+	     -d "{\"project_name\": \"$(PROJECT)\", \"epochs\": 5, \"imgsz\": 640, \"batch\": 16}" | jq .
 	@echo "\n3. Waiting for training to complete (polling status)..."
 	@status="training"; \
 	while [ "$$status" = "training" ] || [ "$$status" = "idle" ]; do \
-		response=$$(curl -s "http://127.0.0.1:8000/api/v1/training/status?project=coco128-seg"); \
+		response=$$(curl -s "http://127.0.0.1:8000/api/v1/training/status?project=$(PROJECT)"); \
 		status=$$(echo $$response | jq -r .status); \
 		progress=$$(echo $$response | jq -r .progress); \
 		epoch=$$(echo $$response | jq -r .current_epoch); \
@@ -56,11 +60,14 @@ verify: test-data
 	done
 	@echo "Training completed! weights verified via status."
 	@echo "\n4. Testing inference with trained model..."
-	curl -s -X POST "http://127.0.0.1:8000/api/v1/detect/image?model_path=models/coco128-seg/weights/best.pt&confidence_threshold=0.25" \
-	     -F "file=@datasets/coco128-seg/val/images/000000000139.jpg" | jq .
+	@IMAGE=$$(ls datasets/$(PROJECT)/val/images/*.jpg | head -n 1); \
+	curl -s -X POST "http://127.0.0.1:8000/api/v1/detect/image?model_path=models/$(PROJECT)/weights/best.pt&confidence_threshold=0.25" \
+	     -F "file=@$$IMAGE" | jq .
 
 ui: install
-	$(BIN)/streamlit run streamlit_app.py
+	. $(VENV)/bin/activate && streamlit run streamlit_app.py
+
+
 
 clean:
 	rm -rf $(VENV)

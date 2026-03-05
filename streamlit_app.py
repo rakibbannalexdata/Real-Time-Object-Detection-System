@@ -75,7 +75,7 @@ with st.sidebar:
     try:
         # In a real scenario, we might have an endpoint for this. 
         # For now, we assume coco128-seg as default.
-        projects = ["coco128-seg"] 
+        projects = ["coco128-seg","weedsVsCrops"] 
     except:
         pass
         

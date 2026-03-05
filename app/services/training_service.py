@@ -108,10 +108,8 @@ class TrainingService:
             try:
                 content = label_file.read_text().strip()
                 if not content:
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail=f"Label file is empty: {label_file}"
-                    )
+                    # Empty label files are valid in YOLO - they represent background images with no objects.
+                    continue
 
                 for line_no, line in enumerate(content.splitlines(), start=1):
                     line = line.strip()
