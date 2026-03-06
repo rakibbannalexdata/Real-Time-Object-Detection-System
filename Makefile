@@ -69,7 +69,7 @@ verify: test-data
 
 train: test-data
 	@echo "Starting local training for project: $(PROJECT)..."
-	$(BIN)/python train_local.py --project $(PROJECT) --epochs $(EPOCHS) --imgsz $(IMGSZ) --batch $(BATCH)
+	PYTHONPATH=. $(BIN)/python train_local.py --project $(PROJECT) --epochs $(EPOCHS) --imgsz $(IMGSZ) --batch $(BATCH) $(EXTRA_ARGS)
 
 ui: install
 	. $(VENV)/bin/activate && streamlit run streamlit_app.py

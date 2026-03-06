@@ -249,7 +249,7 @@ names:
         logger.info(f"Generated dataset.yaml at {yaml_path}")
         return yaml_path
 
-    def start_training_sync(self, project_name: str, epochs: int, imgsz: int, batch: int, class_names: dict[int, str] = None) -> str:
+    def start_training_sync(self, project_name: str, epochs: int, imgsz: int, batch: int, class_names: dict[int, str] = None, val: bool = True) -> str:
         """
         Synchronously starts YOLO training.
         Intended to be run in a background thread via FastAPI BackgroundTasks.
@@ -307,7 +307,8 @@ names:
                 batch=batch,
                 project=str(abs_models_dir),
                 name=project_name,
-                exist_ok=True # Enable resuming/overwriting
+                exist_ok=True, # Enable resuming/overwriting
+                val=val
             )
 
             # Construct the returned path relative to the current working directory
