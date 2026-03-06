@@ -6,6 +6,9 @@ BIN = $(VENV)/bin
 PIP = $(BIN)/pip
 UVICORN = $(BIN)/uvicorn
 PROJECT = weedsVsCrops
+EPOCHS = 10
+IMGSZ = 640
+BATCH = 16
 
 help:
 	@echo "Usage:"
@@ -63,6 +66,10 @@ verify: test-data
 	@IMAGE=$$(ls datasets/$(PROJECT)/val/images/*.jpg | head -n 1); \
 	curl -s -X POST "http://127.0.0.1:8000/api/v1/detect/image?model_path=models/$(PROJECT)/weights/best.pt&confidence_threshold=0.25" \
 	     -F "file=@$$IMAGE" | jq .
+
+train: test-data
+	@echo "Starting local training for project: $(PROJECT)..."
+	$(BIN)/python train_local.py --project $(PROJECT) --epochs $(EPOCHS) --imgsz $(IMGSZ) --batch $(BATCH)
 
 ui: install
 	. $(VENV)/bin/activate && streamlit run streamlit_app.py
