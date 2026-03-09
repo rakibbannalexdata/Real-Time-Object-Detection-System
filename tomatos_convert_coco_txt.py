@@ -128,5 +128,5 @@ names:
 
 if __name__ == "__main__":
     import sys
-    project = sys.argv[1] if len(sys.argv) > 1 else "weedsVsCrops"
+    project = sys.argv[1] if len(sys.argv) > 1 else "plants"
     setup_weeds_vs_crops(project)

@@ -308,7 +308,16 @@ names:
                 project=str(abs_models_dir),
                 name=project_name,
                 exist_ok=True, # Enable resuming/overwriting
-                val=val
+                val=val,
+
+                optimizer="AdamW",  # Better convergence for custom datasets
+                plots=True,  # Generates loss curves automatically
+                lr0=0.001,  # 10x LOWER than default (CRITICAL to stop divergence)
+                lrf=0.1,  # Final learning rate fraction
+                cos_lr=True,  # Use Cosine Learning Rate (smoother)
+                warmup_epochs=3,  # Give the model 3 epochs to "warm up"
+                patience=25,  # Stop if it doesn't improve for 15 epochs
+                mosaic=0.5,
             )
 
             # Construct the returned path relative to the current working directory

@@ -5,7 +5,7 @@ VENV = venv
 BIN = $(VENV)/bin
 PIP = $(BIN)/pip
 UVICORN = $(BIN)/uvicorn
-NAME ?= a
+NAME ?= plants
 SRC = main_data_sets/$(NAME)
 PROJECT = $(NAME)
 EPOCHS = 10
@@ -68,8 +68,8 @@ verify: test-data
 	@IMAGE=$$(ls datasets/$(PROJECT)/val/images/*.jpg | head -n 1); \
 	curl -s -X POST "http://127.0.0.1:8000/api/v1/detect/image?model_path=models/$(PROJECT)/weights/best.pt&confidence_threshold=0.25" \
 	     -F "file=@$$IMAGE" | jq .
- 
-train: test-data
+
+train: 
 	@echo "Starting local training for project: $(PROJECT)..."
 	PYTHONPATH=. $(BIN)/python train_local.py --project $(PROJECT) --epochs $(EPOCHS) --imgsz $(IMGSZ) --batch $(BATCH) $(EXTRA_ARGS)
  
