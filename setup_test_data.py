@@ -76,5 +76,5 @@ def setup_dataset(project_name):
 
 if __name__ == "__main__":
     import sys
-    project = sys.argv[1] if len(sys.argv) > 1 else "weedsVsCrops"
+    project = sys.argv[1] if len(sys.argv) > 1 else "stout"
     setup_dataset(project)

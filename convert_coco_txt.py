@@ -4,8 +4,6 @@ import argparse
 import yaml
 import json
 import random
-from ultralytics.data.converter import convert_coco
-
 def extract_categories(json_path):
     """Extracts category names and IDs from COCO JSON."""
     try:
@@ -17,10 +15,62 @@ def extract_categories(json_path):
         print(f"⚠️ Warning: Could not parse categories from {json_path}: {e}")
         return {0: "crop"} # Fallback
 
+def convert_coco_manual(json_path, save_dir):
+    """Custom manual conversion to bypass Ultralytics converter issues."""
+    with open(json_path, 'r') as f:
+        data = json.load(f)
+    
+    os.makedirs(save_dir, exist_ok=True)
+    
+    # Image lookup
+    images = {img['id']: img for img in data['images']}
+    # Category mapping (YOLO uses 0-based indices)
+    cat_ids = sorted([cat['id'] for cat in data['categories']])
+    cat_map = {cat_id: i for i, cat_id in enumerate(cat_ids)}
+    
+    # Group annotations by image
+    img_ann = {}
+    for ann in data['annotations']:
+        img_id = ann['image_id']
+        if img_id not in img_ann:
+            img_ann[img_id] = []
+        img_ann[img_id].append(ann)
+        
+    for img_id, anns in img_ann.items():
+        if img_id not in images:
+            continue
+        img = images[img_id]
+        w, h = img['width'], img['height']
+        img_name = img['file_name']
+        txt_name = os.path.splitext(img_name)[0] + ".txt"
+        txt_path = os.path.join(save_dir, txt_name)
+        
+        with open(txt_path, 'w') as f:
+            for ann in anns:
+                if 'segmentation' not in ann or not ann['segmentation']:
+                    continue
+                
+                cls = cat_map.get(ann['category_id'], 0)
+                
+                # YOLO segmentation format: <class> <x1> <y1> <x2> <y2> ...
+                # Polygons are already converted in covert_pix_to_txt.py
+                for poly in ann['segmentation']:
+                    if len(poly) < 6:
+                        continue
+                    
+                    # Normalize coordinates
+                    normalized_poly = []
+                    for i in range(0, len(poly), 2):
+                        px, py = poly[i], poly[i+1]
+                        normalized_poly.append(px / w)
+                        normalized_poly.append(py / h)
+                    
+                    line = f"{cls} " + " ".join([f"{x:.6f}" for x in normalized_poly])
+                    f.write(line + "\n")
+
 def main(folder_name=None):
     parser = argparse.ArgumentParser(description="Convert COCO dataset to YOLO format with dynamic categories and auto-splitting.")
     
-    # Use folder_name to provide defaults for argparse
     default_src = f"main_data_sets/{folder_name}" if folder_name else None
     default_project = folder_name if folder_name else None
 
@@ -30,7 +80,7 @@ def main(folder_name=None):
     args = parser.parse_args()
     
     if not args.src:
-        parser.error("the following arguments are required: --src (or pass folder_name to main())")
+        parser.error("The following arguments are required: --src (or pass folder_name to main())")
 
     src_root = os.path.abspath(args.src)
     project_name = args.project if args.project else os.path.basename(src_root.rstrip(os.sep))
@@ -44,9 +94,13 @@ def main(folder_name=None):
     if not os.path.exists(src_val):
         src_val = os.path.join(src_root, "valid")
 
-    # Discover categories from train split (main data source)
+    # Discover categories from train split
     train_json = os.path.join(src_train, "_annotations.coco.json")
-    category_names = extract_categories(train_json)
+    category_map = extract_categories(train_json)
+    # Sorted list of names for yaml
+    cat_ids = sorted(category_map.keys())
+    category_names = {i: category_map[cid] for i, cid in enumerate(cat_ids)}
+    
     print(f"🏷️ Extracted {len(category_names)} categories: {list(category_names.values())}")
 
     def process_split(src_path, split_name):
@@ -59,21 +113,11 @@ def main(folder_name=None):
         os.makedirs(dst_images_dir, exist_ok=True)
 
         print(f"📂 Converting COCO for split: {split_name}...")
-        # ultralytics convert_coco will handle the mapping to YOLO format
-        convert_coco(labels_dir=src_path, save_dir=dst_labels_dir, use_segments=True)
-
-        # Move and normalize labels from 'labels2/labels/_annotations.coco' folder (ultralytics quirk)
-        labels_temp_root = dst_labels_dir + "2"
-        if os.path.exists(labels_temp_root):
-            for root, _, files in os.walk(labels_temp_root):
-                for filename in files:
-                    if filename.endswith(".txt"):
-                        src_label_path = os.path.join(root, filename)
-                        dst_label_path = os.path.join(dst_labels_dir, filename)
-                        # We just move them. Note: We ARE NOT force-resetting to ID 0 here 
-                        # to respect the multi-category discovery request.
-                        shutil.move(src_label_path, dst_label_path)
-            shutil.rmtree(labels_temp_root)
+        json_path = os.path.join(src_path, "_annotations.coco.json")
+        if os.path.exists(json_path):
+            convert_coco_manual(json_path, dst_labels_dir)
+        else:
+            print(f"⚠️ Warning: No _annotations.coco.json found in {src_path}")
 
         # Copy images
         img_list = []
@@ -89,11 +133,10 @@ def main(folder_name=None):
     train_images = process_split(src_train, "train")
     val_images = process_split(src_val, "val")
 
-    # Auto-split logic if val is empty (typical for 'a' dataset)
+    # Auto-split logic if val is empty
     if not val_images and train_images:
         print("⚖️ No validation set found. Performing 80/20 auto-split...")
         val_count = max(1, int(len(train_images) * 0.2))
-            
         random.shuffle(train_images)
         to_move = train_images[:val_count]
         
@@ -106,9 +149,7 @@ def main(folder_name=None):
         os.makedirs(val_images_dir, exist_ok=True)
         
         for img_name in to_move:
-            # Move Image
             shutil.move(os.path.join(train_images_dir, img_name), os.path.join(val_images_dir, img_name))
-            # Move Label (matching name, replace extension with .txt)
             lbl_name = os.path.splitext(img_name)[0] + ".txt"
             train_lbl_path = os.path.join(train_labels_dir, lbl_name)
             if os.path.exists(train_lbl_path):
@@ -134,4 +175,7 @@ def main(folder_name=None):
     print(f"✨ All done! Dataset '{project_name}' is ready in 'datasets/'.")
 
 if __name__ == "__main__":
-    main(folder_name="a")
+    main(folder_name="stout")
+
+if __name__ == "__main__":
+    main(folder_name="stout")

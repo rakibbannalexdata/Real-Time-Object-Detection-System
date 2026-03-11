@@ -5,7 +5,7 @@ VENV = venv
 BIN = $(VENV)/bin
 PIP = $(BIN)/pip
 UVICORN = $(BIN)/uvicorn
-NAME ?= plants
+NAME ?= stout
 SRC = main_data_sets/$(NAME)
 PROJECT = $(NAME)
 EPOCHS = 10
@@ -34,8 +34,12 @@ run: install
 test-data: install
 	$(BIN)/python setup_test_data.py
  
-convert-coco-txt: install
+convert-coco-txt: install fix-stout-annotations
 	$(BIN)/python convert_coco_txt.py --src $(SRC) --project $(PROJECT)
+
+fix-stout-annotations: install
+	@echo "Fixing annotations for $(PROJECT)..."
+	$(BIN)/python covert_pix_to_txt.py --input main_data_sets/$(PROJECT)/train/_annotations.coco.json
  
 verify: test-data
 	@echo "Ensure the server is running on http://localhost:8000 before running this."
