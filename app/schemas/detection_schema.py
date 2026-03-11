@@ -54,7 +54,7 @@ class Detection(BaseModel):
         ...,
         min_length=4,
         max_length=4,
-        description="Bounding box [x1, y1, x2, y2] in pixel coordinates",
+        description="Bounding box [x1, y1, x2, y2] in normalized coordinates (0-1)",
     )
     class_id: int = Field(..., description="Numeric class identifier")
     segmentation: Optional[list[list[float]]] = Field(

@@ -36,14 +36,14 @@ def convert_coco_manual(json_path, save_dir):
             img_ann[img_id] = []
         img_ann[img_id].append(ann)
         
-    for img_id, anns in img_ann.items():
-        if img_id not in images:
-            continue
-        img = images[img_id]
-        w, h = img['width'], img['height']
+    for img_id, img in images.items():
         img_name = img['file_name']
+        w, h = img['width'], img['height']
         txt_name = os.path.splitext(img_name)[0] + ".txt"
         txt_path = os.path.join(save_dir, txt_name)
+        
+        # Initialize an empty list for annotations if not present
+        anns = img_ann.get(img_id, [])
         
         with open(txt_path, 'w') as f:
             for ann in anns:
@@ -85,6 +85,11 @@ def main(folder_name=None):
     src_root = os.path.abspath(args.src)
     project_name = args.project if args.project else os.path.basename(src_root.rstrip(os.sep))
     project_dir = os.path.abspath(f"datasets/{project_name}")
+    
+    # 🚨 CLEANUP: Remove any existing project directory to ensure a fresh 80/20 split
+    if os.path.exists(project_dir):
+        print(f"🧹 Cleaning existing directory: {project_dir}")
+        shutil.rmtree(project_dir)
     
     print(f"🚀 Starting dataset conversion: {src_root} -> {project_dir}")
 
@@ -135,8 +140,12 @@ def main(folder_name=None):
 
     # Auto-split logic if val is empty
     if not val_images and train_images:
-        print("⚖️ No validation set found. Performing 80/20 auto-split...")
-        val_count = max(1, int(len(train_images) * 0.2))
+        total_count = len(train_images)
+        val_count = max(1, int(total_count * 0.2))
+        train_count = total_count - val_count
+        
+        print(f"⚖️ No validation set found. Performing {train_count}/{val_count} (80/20) auto-split...")
+            
         random.shuffle(train_images)
         to_move = train_images[:val_count]
         
@@ -149,14 +158,22 @@ def main(folder_name=None):
         os.makedirs(val_images_dir, exist_ok=True)
         
         for img_name in to_move:
-            shutil.move(os.path.join(train_images_dir, img_name), os.path.join(val_images_dir, img_name))
+            # Move Image
+            src_img = os.path.join(train_images_dir, img_name)
+            dst_img = os.path.join(val_images_dir, img_name)
+            if os.path.exists(src_img):
+                shutil.move(src_img, dst_img)
+            
+            # Move Label
             lbl_name = os.path.splitext(img_name)[0] + ".txt"
-            train_lbl_path = os.path.join(train_labels_dir, lbl_name)
-            if os.path.exists(train_lbl_path):
-                shutil.move(train_lbl_path, os.path.join(val_labels_dir, lbl_name))
+            src_lbl = os.path.join(train_labels_dir, lbl_name)
+            dst_lbl = os.path.join(val_labels_dir, lbl_name)
+            if os.path.exists(src_lbl):
+                shutil.move(src_lbl, dst_lbl)
         
-        print(f"📦 Moved {len(to_move)} files to validation set.")
+        print(f"📦 Moved {len(to_move)} files to validation set. Train: {train_count}, Val: {val_count}")
         val_images = to_move
+        train_images = train_images[val_count:]
 
     # Generate dataset.yaml
     if train_images:

@@ -2,9 +2,12 @@ import streamlit as st
 import requests
 import time
 import json
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 import io
 import os
+import cv2
+import numpy as np
+import hashlib
 
 # --- Configuration ---
 st.set_page_config(
@@ -75,7 +78,7 @@ with st.sidebar:
     try:
         # In a real scenario, we might have an endpoint for this. 
         # For now, we assume coco128-seg as default.
-        projects = ["coco128-seg","weedsVsCrops","a"] 
+        projects = ["coco128-seg","weedsVsCrops","stout"] 
     except:
         pass
         
@@ -200,34 +203,99 @@ with tab2:
                         else:
                             st.success(f"✅ Found {len(detections)} objects!")
                             
-                            # Visualization
-                            draw = ImageDraw.Draw(image)
-                            # Sort detections with largest first so smaller labels are on top
-                            for det in sorted(detections, key=lambda x: (x['bbox'][2]-x['bbox'][0])*(x['bbox'][3]-x['bbox'][1]), reverse=True):
-                                box = det['bbox']
-                                label = f"{det['class']} ({det['confidence']:.2f})"
+                            # --- Visualization Logic ---
+                            # Convert PIL image to OpenCV BGR for advanced drawing
+                            img_np = np.array(image.convert("RGB"))
+                            img_np = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
+                            h, w = img_np.shape[:2]
+                            
+                            # Create a separate overlay for semi-transparent polygons
+                            overlay = img_np.copy()
+                            
+                            # Color palette for consistent class colors
+                            class_colors = {}
+                            def get_colors(cls_name):
+                                if cls_name not in class_colors:
+                                    import hashlib
+                                    h_hash = hashlib.md5(cls_name.encode()).hexdigest()
+                                    r = int(h_hash[0:2], 16) % 200 + 55
+                                    g = int(h_hash[2:4], 16) % 200 + 55
+                                    b = int(h_hash[4:6], 16) % 200 + 55
+                                    class_colors[cls_name] = (b, g, r) # BGR
+                                base = class_colors[cls_name]
+                                return base
+
+                            sorted_dets = sorted(detections, key=lambda x: (x['bbox'][2]-x['bbox'][0]) * (x['bbox'][3]-x['bbox'][1]), reverse=True)
+                            
+                            for det in sorted_dets:
+                                cls_name = det['class']
+                                color_bgr = get_colors(cls_name)
                                 
-                                # Draw Box
-                                w, h = image.size
-                                draw.rectangle([box[0] * w, box[1] * h, box[2] * w, box[3] * h], outline="red", width=4)
-                                
-                                # Draw Label Background
-                                try:
-                                    # Handle label background for readability
-                                    text_size = draw.textbbox((box[0] * w, box[1] * h - 15), label)
-                                    draw.rectangle(text_size, fill="red")
-                                    draw.text((box[0] * w, box[1] * h - 15), label, fill="white")
-                                except:
-                                    draw.text((box[0] * w, box[1] * h - 15), label, fill="red")
-                                
-                                # Draw Polygon
+                                # 1. Draw Polygon / Mask
                                 if 'segmentation' in det and det.get('segmentation'):
                                     polygon = det['segmentation']
-                                    pixel_polygon = [(p[0] * w, p[1] * h) for p in polygon]
-                                    if len(pixel_polygon) > 2:
-                                        draw.polygon(pixel_polygon, outline="blue", width=2)
+                                    # DetectionService returns list of [x, y]
+                                    pts = np.array([[p[0] * w, p[1] * h] for p in polygon], np.int32)
+                                    pts = pts.reshape((-1, 1, 2))
+                                    
+                                    if len(pts) > 2:
+                                        # Fill on overlay
+                                        cv2.fillPoly(overlay, [pts], color_bgr)
+                                        # Sharp border on main image with anti-aliasing
+                                        cv2.polylines(img_np, [pts], True, color_bgr, 1, cv2.LINE_AA)
 
-                            st.image(image, caption="Detection Results", use_column_width=True)
+                            # Blend overlay with main image (semi-transparent fill)
+                            alpha = 0.3
+                            cv2.addWeighted(overlay, alpha, img_np, 1 - alpha, 0, img_np)
+                            
+                            # Convert back to PIL for high-quality text drawing
+                            image = Image.fromarray(cv2.cvtColor(img_np, cv2.COLOR_BGR2RGB))
+                            draw_final = ImageDraw.Draw(image)
+                            
+                            # Final pass: Draw labels on top of everything
+                            for det in sorted_dets:
+                                cls_name = det['class']
+                                conf = det['confidence']
+                                color_bgr = get_colors(cls_name)
+                                color_rgb = (color_bgr[2], color_bgr[1], color_bgr[0]) # Convert back for PIL
+                                box = [det['bbox'][0]*w, det['bbox'][1]*h, det['bbox'][2]*w, det['bbox'][3]*h]
+                                label = f"{cls_name} {conf:.2f}"
+                                
+                                try:
+                                    font = None
+                                    font_size = max(24, int(h / 30))
+                                    # Try various font paths
+                                    font_paths = [
+                                        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+                                        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+                                        "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf",
+                                        "arial.ttf"
+                                    ]
+                                    for path in font_paths:
+                                        try:
+                                            font = ImageFont.truetype(path, font_size)
+                                            break
+                                        except: continue
+                                    
+                                    if not font: font = ImageFont.load_default()
+                                    
+                                    # Position label: slightly above the top of the box
+                                    text_coords = (box[0], box[1] - font_size - 5 if box[1] > (font_size + 10) else box[1])
+                                    txt_bbox = draw_final.textbbox(text_coords, label, font=font)
+                                    
+                                    # Add padding to background box
+                                    pad = 2
+                                    padded_bbox = (txt_bbox[0]-pad, txt_bbox[1]-pad, txt_bbox[2]+pad, txt_bbox[3]+pad)
+                                    
+                                    # Draw solid background box
+                                    draw_final.rectangle(padded_bbox, fill=color_rgb)
+                                    # Draw crisp white text
+                                    draw_final.text(text_coords, label, fill="white", font=font)
+                                except Exception as e:
+                                    # Fallback
+                                    draw_final.text((box[0], box[1]), label, fill="red")
+
+                            st.image(image, caption="Enhanced Detection Results", use_column_width=True)
                     else:
                         st.error(f"❌ API Error ({resp.status_code}): {resp.text}")
                 except Exception as e:

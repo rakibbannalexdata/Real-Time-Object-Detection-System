@@ -258,8 +258,8 @@ class DetectionService:
 
             boxes = result.boxes
             for i in range(len(boxes)):
-                # xyxy format: [x1, y1, x2, y2]
-                xyxy = boxes.xyxy[i].tolist()
+                # xyxyn format: [x1, y1, x2, y2] normalized
+                xyxyn = boxes.xyxyn[i].tolist()
                 conf = float(boxes.conf[i])
                 cls_id = int(boxes.cls[i])
                 cls_name = names.get(cls_id, str(cls_id))
@@ -269,7 +269,7 @@ class DetectionService:
                         **{
                             "class": cls_name,
                             "confidence": round(conf, 4),
-                            "bbox": [round(v, 2) for v in xyxy],
+                            "bbox": [round(v, 6) for v in xyxyn],
                             "class_id": cls_id,
                             "segmentation": self._extract_mask(result, i)
                         }
@@ -284,18 +284,27 @@ class DetectionService:
     def _extract_mask(result, index: int) -> Optional[list[list[float]]]:
         """
         Extract normalized segmentation mask for a specific detection index.
+        Uses pixel-level coordinates normalized by image size for maximum precision.
         """
         if not hasattr(result, "masks") or result.masks is None:
             return None
         
         try:
-            # result.masks.xyn returns normalized coordinates [x, y, x, y, ...]
-            # It's a list of numpy arrays (one per detection)
-            masks_xyn = result.masks.xyn
-            if index < len(masks_xyn):
-                mask = masks_xyn[index].tolist()
-                return mask
+            # result.masks.xy returns coordinates in pixels [x, y, x, y, ...]
+            masks_xy = result.masks.xy
+            if index < len(masks_xy):
+                mask_pixels = masks_xy[index]
+                if len(mask_pixels) == 0:
+                    return None
+                
+                # Manual normalization for higher precision
+                h, w = result.orig_shape
+                mask_normalized = []
+                for pt in mask_pixels:
+                    mask_normalized.append([round(float(pt[0]) / w, 6), round(float(pt[1]) / h, 6)])
+                
+                return mask_normalized
         except Exception as exc:
-            logger.warning("Failed to extract mask for detection %d: %e", index, exc)
+            logger.warning("Failed to extract mask for detection %d: %s", index, exc)
             
         return None
