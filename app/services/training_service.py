@@ -309,6 +309,7 @@ names:
                 name=project_name,
                 exist_ok=True, # Enable resuming/overwriting
                 val=val,
+                mask_ratio=2, # Use half resolution for masks (OOM protection)
 
                 optimizer="AdamW",  # Better convergence for custom datasets
                 plots=True,  # Generates loss curves automatically

@@ -45,7 +45,7 @@ def process_coco_json(input_path, output_path):
             rle = mask_utils.frPyObjects(seg, h, w) if isinstance(seg['counts'], list) else seg
             try:
                 binary_mask = mask_utils.decode(rle)
-                Contours, _ = cv2.findContours(binary_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                Contours, _ = cv2.findContours(binary_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
                 polygons = [c.flatten().astype(float).tolist() for c in Contours if c.size >= 6]
                 if polygons:
                     processed_seg = polygons

@@ -93,6 +93,7 @@ class DetectionService:
             source=image,
             conf=confidence_threshold,
             iou=iou_threshold,
+            retina_masks=True,
             verbose=False,
         )
 
@@ -188,6 +189,7 @@ class DetectionService:
                         source=frame_resized,
                         conf=confidence_threshold,
                         iou=iou_threshold,
+                        retina_masks=True,
                         verbose=False,
                     )
 
